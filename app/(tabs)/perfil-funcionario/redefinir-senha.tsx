@@ -15,8 +15,8 @@ import {
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAuth } from '../../contexts/AuthContext';
-import api from '../../services/api';
+import { useAuth } from '../../../contexts/AuthContext';
+import api from '../../../services/api';
 
 export default function RedefinirSenhaScreen() {
   const router = useRouter();

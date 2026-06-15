@@ -1,4 +1,4 @@
-// app/perfil-funcionario/index.tsx
+// app/(tabs)/perfil-funcionario/index.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -12,10 +12,10 @@ import {
   ScrollView,
   SafeAreaView,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAuth } from '../../contexts/AuthContext';
-import api from '../../services/api';
+import { useAuth } from '../../../contexts/AuthContext';
+import api from '../../../services/api';
 
 export default function PerfilFuncionarioScreen() {
   const router = useRouter();
@@ -77,8 +77,7 @@ export default function PerfilFuncionarioScreen() {
     setLoading(true);
     setPasswordError('');
     try {
-      // Endpoint correto: /funcionarios/{id}/alterar-senha
-      const userId = user?.id;   // o objeto user deve conter 'id'
+      const userId = user?.id;
       if (!userId) throw new Error('Usuário não identificado');
       await api.post(`/funcionarios/${userId}/alterar-senha`, {
         senha_atual: oldPassword,
@@ -94,26 +93,15 @@ export default function PerfilFuncionarioScreen() {
   };
   if (!user) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color="#8D0000" />
-          <Text style={styles.loadingText}>Carregando perfil...</Text>
-        </View>
-      </SafeAreaView>
+      <View style={styles.centerLoading}>
+        <ActivityIndicator size="large" color="#8D0000" />
+        <Text style={styles.loadingText}>Carregando perfil...</Text>
+      </View>
     );
   }
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: 'Meu Perfil',
-          headerStyle: { backgroundColor: '#FDF5E6' },
-          headerTintColor: '#8D0000',
-          headerTitleStyle: { fontWeight: 'bold' },
-          headerShadowVisible: false,
-        }}
-      />
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Avatar e nome */}

@@ -63,7 +63,6 @@ export default function ForgotPasswordScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        {/* Ícone do quadrado vermelho (imagem) */}
         <Image
           source={require('../../assets/images/forgot_password.jpeg')}
           style={styles.icon}

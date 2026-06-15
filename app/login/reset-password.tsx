@@ -99,19 +99,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 32,
   },
-  iconContainer: {
-    width: 80,
-    height: 80,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    borderRadius: 20,
+  icon: {
     marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   title: {
     fontSize: 28,
@@ -126,13 +115,6 @@ const styles = StyleSheet.create({
     color: '#8D0000',
     textAlign: 'center',
     marginBottom: 8,
-  },
-  description: {
-    fontSize: 14,
-    color: '#555',
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 20,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -158,32 +140,7 @@ const styles = StyleSheet.create({
     color: '#333',
     paddingVertical: 12,
   },
-  strengthContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    marginTop: 4,
-    marginBottom: 20,
-  },
-  strengthLabel: {
-    fontSize: 14,
-    color: '#555',
-    marginRight: 8,
-  },
-  strengthText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  strengthStrong: {
-    color: '#2E7D32',
-  },
-  strengthMedium: {
-    color: '#F57C00',
-  },
-  strengthWeak: {
-    color: '#D32F2F',
-  },
-  saveButton: {
+  button: {
     backgroundColor: '#8D0000',
     borderRadius: 30,
     height: 54,
@@ -191,22 +148,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
-    marginBottom: 16,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
-  saveButtonText: {
+  buttonText: {
     color: '#FFF',
     fontSize: 18,
     fontWeight: 'bold',
     letterSpacing: 1,
-  },
-  loginLink: {
-    fontSize: 16,
-    color: '#8D0000',
-    fontWeight: '500',
-    textDecorationLine: 'underline',
   },
   errorText: {
     color: '#8D0000',

@@ -26,7 +26,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email.trim(), password.trim());
-      router.replace('/');
+      router.replace('/(tabs)/mesas');
     } catch (err: any) {
       setError(err.message || 'Falha no login. Verifique suas credenciais.');
     } finally {
