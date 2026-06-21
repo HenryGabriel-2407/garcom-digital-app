@@ -13,6 +13,7 @@ type User = {
   nome: string;
   email: string;
   cargo: string;
+  telefone: string;
 };
 
 type AuthContextData = {
@@ -76,7 +77,7 @@ export const AuthProvider: React.FC<{
     // Salva token ANTES de usar
     await AsyncStorage.setItem('@access_token', access_token);
 
-    // Configura o header padrão (opcional, o interceptor já vai pegá-lo)
+    // Configura o header padrão
     api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
 
     // Agora o interceptor encontrará o token no storage
