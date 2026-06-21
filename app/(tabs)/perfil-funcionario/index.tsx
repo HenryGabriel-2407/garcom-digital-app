@@ -10,8 +10,8 @@ import {
   TextInput,
   ActivityIndicator,
   ScrollView,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -27,15 +27,15 @@ export default function PerfilFuncionarioScreen() {
   const [loading, setLoading] = useState(false);
   const [passwordError, setPasswordError] = useState('');
 
-  // Obtém iniciais do nome para o avatar
+  // Obtém iniciais do nome para o avatar, já que não coloquei a imagem (foto de perfil) como requisito
   const getInitials = () => {
     if (!user?.nome) return 'U';
     const names = user.nome.trim().split(' ');
     if (names.length === 1) return names[0].charAt(0).toUpperCase();
     return (names[0].charAt(0) + names[names.length - 1].charAt(0)).toUpperCase();
-  };
-
-  const handleLogout = () => {
+  };  
+  
+  const handleLogout = () => { 
     Alert.alert(
       'Sair da conta',
       'Tem certeza que deseja sair?',
@@ -129,15 +129,11 @@ export default function PerfilFuncionarioScreen() {
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Telefone</Text>
-              <Text style={styles.infoValue}>
-                {(user as any).telefone || '(47) 99999-9999'}
-              </Text>
+              <Text style={styles.infoValue}>{user.telefone}</Text>
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Cargo</Text>
-              <Text style={styles.infoValue}>
-                {(user as any).cargo || 'Garçom'}
-              </Text>
+              <Text style={styles.infoValue}>{user.cargo}</Text>
             </View>
           </View>
 
