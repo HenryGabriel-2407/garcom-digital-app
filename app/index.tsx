@@ -1,23 +1,20 @@
 import { Redirect } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
-import { ActivityIndicator, View } from 'react-native';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { user} = useAuth();
 
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#8D0000" />
-      </View>
-    );
-  }
-
-  // Se não autenticado, redireciona para login (segurança extra)
   if (!user) {
     return <Redirect href="/login" />;
   }
 
-  // Se autenticado, vai para a tela de perfil do funcionário
-  return <Redirect href="/perfil-funcionario" />;
+  if (user.cargo === 'cozinha') {
+    return <Redirect href="/(tabs)/cozinha" />;
+  }
+
+  if (user.cargo === 'admin' || user.cargo === 'gerente') {  // A especificar melhor, mas a priori já é suficiente
+    return <Redirect href="/(tabs)/admin" />;
+  }
+
+  return <Redirect href="/(tabs)/mesas" />;
 }
