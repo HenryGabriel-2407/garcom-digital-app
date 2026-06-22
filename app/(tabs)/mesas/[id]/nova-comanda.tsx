@@ -1,12 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, Alert, SafeAreaView,
+  ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../services/api';
+
+interface CupomResponse {
+  valido: boolean;
+  desconto_percentual?: number;
+  valor_desconto?: number;
+  valor_final?: number;
+  id?: number;
+  codigo?: string;
+}
 
 interface ItemPedido {
   tipo: 'produto' | 'combo';
@@ -41,9 +51,13 @@ export default function NovaComandaScreen() {
   const [nomeCliente, setNomeCliente] = useState('');
   const [qtdPessoas, setQtdPessoas] = useState(1);
   const [itens, setItens] = useState<ItemPedido[]>([]);
-  const [metodos, setMetodos] = useState<MetodoPagamento[]>([]);
+  const [, setMetodos] = useState<MetodoPagamento[]>([]);
   const [metodoId, setMetodoId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const [codigoCupom, setCodigoCupom] = useState('');
+  const [cupomAplicado, setCupomAplicado] = useState<CupomResponse | null>(null);
+  const [validandoCupom, setValidandoCupom] = useState(false);
 
   // Recebe item vindo da tela de produto/combo
   useEffect(() => {
@@ -91,6 +105,35 @@ export default function NovaComandaScreen() {
     0
   );
 
+  const valorComDesconto = cupomAplicado?.valor_final ?? totalComanda;
+  const descontoValor = cupomAplicado?.valor_desconto ?? 0;
+
+  const validarCupom = async () => {
+    if (!codigoCupom.trim()) {
+      Alert.alert('Atenção', 'Digite um código de cupom.');
+      return;
+    }
+    setValidandoCupom(true);
+    try {
+      const { data } = await api.post<CupomResponse>('/promocoes/validar', {
+        codigo: codigoCupom.trim(),
+        valor_pedido: totalComanda,
+      });
+      if (data.valido) {
+        setCupomAplicado(data);
+        Alert.alert('Cupom aplicado!', `${data.desconto_percentual}% de desconto (R$ ${data.valor_desconto?.toFixed(2).replace('.', ',')})`);
+      } else {
+        Alert.alert('Cupom inválido', 'O código informado não é válido.');
+        setCupomAplicado(null);
+      }
+    } catch (err: any) {
+      Alert.alert('Erro', err.response?.data?.detail || 'Erro ao validar cupom.');
+      setCupomAplicado(null);
+    } finally {
+      setValidandoCupom(false);
+    }
+  };
+
   const handleSalvar = async () => {
     setLoading(true);
     try {
@@ -131,10 +174,11 @@ export default function NovaComandaScreen() {
         id_mesa: Number(mesaId),
         id_garcom: user?.id,
         id_metodo_pagamento: metodoIdAtual,
+        id_cod_promocional: cupomAplicado?.id || undefined,
         preco_total: totalComanda,
-        desconto_aplicado: 0,
+        desconto_aplicado: descontoValor,
         taxa_entrega: 0,
-        valor_a_pagar: totalComanda,
+        valor_a_pagar: valorComDesconto,
         troco: 0,
         status_comanda: 'aberta',
         status_pagamento: 'pendente',
@@ -251,14 +295,71 @@ export default function NovaComandaScreen() {
             )}
             </View>
 
+        {/* Cupom promocional */}
+        <View style={styles.cupomBox}>
+          <Text style={styles.label}>Cupom promocional <Text style={styles.opcional}>(opcional)</Text></Text>
+          <View style={styles.cupomInputRow}>
+            <TextInput
+              style={[styles.cupomInput, cupomAplicado && { borderColor: '#2A6B2A', backgroundColor: '#F0FFF0' }]}
+              value={codigoCupom}
+              onChangeText={(t) => { setCodigoCupom(t); if (cupomAplicado) setCupomAplicado(null); }}
+              placeholder="Digite o código..."
+              placeholderTextColor="#BBB"
+              editable={!cupomAplicado}
+              autoCapitalize="characters"
+            />
+            {cupomAplicado ? (
+              <TouchableOpacity
+                style={styles.cupomRemoveBtn}
+                onPress={() => { setCupomAplicado(null); setCodigoCupom(''); }}
+              >
+                <Feather name="x" size={18} color="#CC0000" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.cupomBtn}
+                onPress={validarCupom}
+                disabled={validandoCupom}
+              >
+                {validandoCupom ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.cupomBtnText}>Validar</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+          {cupomAplicado && (
+            <Text style={styles.cupomSucesso}>
+              {cupomAplicado.desconto_percentual}% de desconto aplicado!
+            </Text>
+          )}
+        </View>
+
         {/* Total */}
         {itens.length > 0 && (
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValor}>
-              R$ {totalComanda.toFixed(2).replace('.', ',')}
-            </Text>
-          </View>
+          <>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal</Text>
+              <Text style={styles.totalValor}>
+                R$ {totalComanda.toFixed(2).replace('.', ',')}
+              </Text>
+            </View>
+            {descontoValor > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.descontoLabel}>Desconto</Text>
+                <Text style={styles.descontoValor}>
+                  - R$ {descontoValor.toFixed(2).replace('.', ',')}
+                </Text>
+              </View>
+            )}
+            <View style={[styles.totalRow, styles.totalFinal]}>
+              <Text style={styles.totalFinalLabel}>Total</Text>
+              <Text style={styles.totalFinalValor}>
+                R$ {valorComDesconto.toFixed(2).replace('.', ',')}
+              </Text>
+            </View>
+          </>
         )}
       </ScrollView>
 
@@ -392,14 +493,50 @@ const styles = StyleSheet.create({
   itemPreco: { fontSize: 13, color: '#8D0000', fontWeight: '700', marginTop: 2 },
   itemObs: { fontSize: 12, color: '#999', marginTop: 2 },
 
+  cupomBox: { marginBottom: 16, marginTop: 8 },
+  cupomInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cupomInput: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 44,
+    fontSize: 15,
+    color: '#333',
+    borderWidth: 1,
+    borderColor: '#EEE',
+  },
+  cupomBtn: {
+    backgroundColor: '#8D0000',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cupomBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
+  cupomRemoveBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#FFEEEE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cupomSucesso: { color: '#2A6B2A', fontSize: 12, fontWeight: '600', marginTop: 6 },
+
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingTop: 14,
-    marginTop: 4,
+    paddingVertical: 6,
   },
-  totalLabel: { fontSize: 15, fontWeight: '700', color: '#333' },
-  totalValor: { fontSize: 16, fontWeight: 'bold', color: '#8D0000' },
+  totalLabel: { fontSize: 14, color: '#555' },
+  totalValor: { fontSize: 14, color: '#333', fontWeight: '600' },
+  descontoLabel: { fontSize: 14, color: '#2A6B2A', fontWeight: '600' },
+  descontoValor: { fontSize: 14, color: '#2A6B2A', fontWeight: 'bold' },
+  totalFinal: { borderTopWidth: 1, borderTopColor: '#EEE', marginTop: 4, paddingTop: 10 },
+  totalFinalLabel: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  totalFinalValor: { fontSize: 18, fontWeight: 'bold', color: '#8D0000' },
 
   footer: {
     flexDirection: 'row',
