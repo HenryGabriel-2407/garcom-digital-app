@@ -2,8 +2,9 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, SafeAreaView,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -40,6 +41,7 @@ const STATUS_ICON: Record<StatusMesa, keyof typeof Feather.glyphMap> = {
 };
 
 function MesaCard({ mesa, onAction }: { mesa: Mesa; onAction: (mesa: Mesa) => void }) {
+  const router = useRouter();
   const cor = STATUS_COLOR[mesa.status];
 
   const labelBotao =
@@ -53,7 +55,15 @@ function MesaCard({ mesa, onAction }: { mesa: Mesa; onAction: (mesa: Mesa) => vo
         <Text style={styles.cardTitle}>
           Mesa {String(mesa.numero).padStart(2, '0')}
         </Text>
-        <Feather name={STATUS_ICON[mesa.status]} size={22} color={cor} />
+        <View style={styles.cardHeaderIcons}>
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: '/(tabs)/mesas/qr-code', params: { id: String(mesa.id) } })}
+            style={styles.qrIconBtn}
+          >
+            <Feather name="smartphone" size={16} color="#8D0000" />
+          </TouchableOpacity>
+          <Feather name={STATUS_ICON[mesa.status]} size={22} color={cor} />
+        </View>
       </View>
 
       <View style={styles.statusRow}>
@@ -158,7 +168,10 @@ export default function MesasScreen() {
           <TouchableOpacity style={[styles.tab, styles.tabActive]}>
             <Text style={styles.tabActiveText}>SALÃO (MESAS)</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.tab}>
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => router.push('/(tabs)/mesas/online')}
+          >
             <Text style={styles.tabText}>ONLINE</Text>
           </TouchableOpacity>
         </View>
@@ -265,6 +278,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 6,
   },
+  cardHeaderIcons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  qrIconBtn: { padding: 4 },
   cardTitle: { fontSize: 17, fontWeight: 'bold', color: '#333' },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   statusText: { fontSize: 13, fontWeight: '600', marginLeft: 5 },
