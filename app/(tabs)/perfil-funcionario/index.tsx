@@ -231,8 +231,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDF5E6',
   },
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   centerLoading: {
     flex: 1,

@@ -1,0 +1,1119 @@
+================================================================================
+                   DOCUMENTACAO COMPLETA DO SISTEMA
+               PIZZARIA FORNO DI RESISTENZA - GESTAO
+================================================================================
+
+================================================================================
+1. VISAO GERAL DO PROJETO
+================================================================================
+
+SISTEMA: Sistema de Gestao Pizzaria Forno di Resistenza
+TIPO: Sistema integrado (App Mobile + API REST)
+PUBLICO-ALVO: Pizzaria com atendimento presencial e delivery
+
+OBJETIVO:
+  Sistema completo de gestao para pizzaria, abrangendo cadastro de produtos,
+  combos e categorias; gerenciamento de mesas e comandas (pedidos); controle
+  de cozinha com atualizacao de status em tempo real; cadastro de clientes
+  e funcionarios; codigos promocionais; metodos de pagamento; auditoria de
+  operacoes; e fluxo de delivery (pedidos online).
+
+USUARIOS E PAPEIS:
+  - Garcom:  Atendimento presencial (abrir comandas, adicionar itens,
+             finalizar pedidos)
+  - Cozinha: Visualizar e atualizar status dos pedidos (em preparo, pronto)
+  - Admin:   Gestao completa (CRUD de produtos, funcionarios, mesas,
+             clientes, promocoes, visualizar auditoria)
+  - Gerente: Visualizar auditoria (acesso similar ao admin mas restrito)
+  - Cliente: Realizar pedidos (fluxo futuro via QR code da mesa)
+
+TECNOLOGIAS UTILIZADAS:
+
+  APLICATIVO MOBILE (FRONTEND):
+  - React Native com Expo (SDK ~51)
+  - TypeScript
+  - expo-router (roteamento baseado em arquivos)
+  - Axios (cliente HTTP)
+  - AsyncStorage (armazenamento local de token JWT)
+  - expo-print / expo-sharing (geracao de PDF de recibos)
+  - react-native-qrcode-svg (geracao de QR code)
+  - @react-native-community/datetimepicker (selecao de datas)
+  - react-native-safe-area-context
+
+  API BACKEND:
+  - Python 3.12+
+  - FastAPI (framework web)
+  - SQLAlchemy 2.0 (ORM)
+  - Pydantic v2 (schemas e validacao)
+  - PyJWT (tokens JWT)
+  - pwdlib (hashing de senhas com bcrypt/argon2)
+  - Alembic (migracoes de banco)
+  - Postgres (banco de dados)
+  - aiosmtplib (envio de e-mail)
+  - Pydantic Settings (configuracao via .env)
+  - pytest + httpx (testes automatizados)
+
+ARQUITETURA RESUMIDA:
+  +------------------+       HTTP (REST)       +------------------+
+  |  App Mobile      | ----------------------->|  API FastAPI      |
+  |  (React Native)  | <-----------------------|  (Python)         |
+  +------------------+       JSON + JWT        +------------------+
+                                                     |
+                                                     v
+                                              +------------------+
+                                              | Postgres Database |
+                                              |  (SQLAlchemy)     |
+                                              +------------------+
+
+  O aplicativo mobile consome a API REST via chamadas HTTP com autenticacao
+  JWT (Bearer token). O token e obtido no login e armazenado no AsyncStorage,
+  sendo automaticamente anexado as requisicoes via interceptor do Axios.
+  A URL base da API e descoberta dinamicamente a partir do hostUri do Expo.
+
+================================================================================
+2. APLICATIVO MOBILE - LISTA DE TELAS
+================================================================================
+
+  Total de telas: 23 (arquivos .tsx em app/)
+  Roteamento: expo-router (file-based routing)
+  Nucleo: AuthProvider + TabNavigator + Stack Navigator
+
+--------------------------------------------------------------------------------
+2.1. LAYOUTS E ROTEAMENTO
+--------------------------------------------------------------------------------
+
+  app/_layout.tsx (Layout Raiz)
+  - Envolve toda a aplicacao com AuthProvider
+  - Exibe loading spinner enquanto verifica token armazenado
+  - Renderiza Stack com headerShown: false
+  - Hooks: useAuth() para estado de loading
+
+  app/index.tsx (Redirecionador Inicial)
+  - Sem user -> redireciona para /login
+  - user.cargo == 'cozinha' -> /(tabs)/cozinha
+  - user.cargo in ('admin','gerente') -> /(tabs)/admin
+  - senao (garcom) -> /(tabs)/mesas
+  - Hooks: useAuth()
+
+  app/(tabs)/_layout.tsx (Navegador de Abas)
+  - 4 abas visiveis: Cozinha, Mesas, Admin, Perfil
+  - Visibilidade controlada por cargo do usuario
+  - Abas ocultas (href: null) para telas aninhadas
+  - Estilo: activeTintColor='#8D0000', inactiveTintColor='#AAA'
+
+--------------------------------------------------------------------------------
+2.2. FLUXO DE AUTENTICACAO (3 telas)
+--------------------------------------------------------------------------------
+
+  Tela: LoginScreen
+  Rota:              /login
+  Arquivo:           app/login/index.tsx
+  Tipo de Acesso:    Publico (sem autenticacao)
+  Descricao:         Tela de entrada do sistema. Formulario de login com
+                     e-mail e senha. Chama signIn() do AuthContext que
+                     executa POST /auth/token seguido de GET /funcionarios/me.
+                     Em caso de sucesso, redireciona para a tela principal
+                     conforme o cargo do usuario.
+  Componentes:       SafeAreaView, KeyboardAvoidingView, Image, TextInput (2),
+                     TouchableOpacity (2), ActivityIndicator
+  Estados:           email (string), password (string), loading (bool), error (string)
+  Hooks:             useState (4x), useRouter, useAuth
+  API:               (via AuthContext) POST /auth/token, GET /funcionarios/me
+  Navegacao:         router.replace('/(tabs)/...') no sucesso,
+                     router.push('/login/forgot-password')
+
+  Tela: ForgotPasswordScreen
+  Rota:              /login/forgot-password
+  Arquivo:           app/login/forgot-password.tsx
+  Tipo de Acesso:    Publico
+  Descricao:         Formulario para solicitar codigo de redefinicao de
+                     senha. Envia e-mail e, em caso de sucesso, redireciona
+                     para a tela de reset com o e-mail como parametro.
+  Componentes:       KeyboardAvoidingView, Image, TextInput, TouchableOpacity,
+                     ActivityIndicator, Alert
+  Estados:           email (string), loading (bool), error (string)
+  Hooks:             useState (3x), useRouter
+  API:               POST /auth/forgot-password
+  Navegacao:         router.push('/login/reset-password') no sucesso
+
+  Tela: ResetPasswordScreen
+  Rota:              /login/reset-password
+  Arquivo:           app/login/reset-password.tsx
+  Tipo de Acesso:    Publico
+  Descricao:         Formulario para redefinir a senha usando o codigo de
+                     6 digitos recebido por e-mail. Valida confirmacao de
+                     senha antes de enviar. Redireciona ao login no sucesso.
+  Componentes:       KeyboardAvoidingView, TextInput (3), TouchableOpacity (2),
+                     ActivityIndicator, Alert, Feather icons
+  Estados:           code, newPassword, confirmPassword, loading, error
+  Hooks:             useState (5x), useRouter, useLocalSearchParams
+  API:               POST /auth/reset-password
+  Navegacao:         router.replace('/login') no sucesso, router.back()
+
+--------------------------------------------------------------------------------
+2.3. PAINEL DA COZINHA (1 tela)
+--------------------------------------------------------------------------------
+
+  Tela: CozinhaScreen (Kitchen Panel)
+  Rota:              /(tabs)/cozinha
+  Arquivo:           app/(tabs)/cozinha/index.tsx
+  Tipo de Acesso:    Autenticado (cargo = 'cozinha')
+  Descricao:         Painel da cozinha com 3 abas de filtro: PENDENTES
+                     (aberta), EM PREPARO (em_preparo), PRONTAS (pronta).
+                     Cada comanda exibe itens com detalhes (nome, imagem,
+                     quantidade), numero da mesa/origem delivery, nome do
+                     garcom e botoes de acao (INICIAR PREPARO, MARCAR COMO
+                     PRONTA). Atualiza automaticamente ao focar a tela.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, TouchableOpacity,
+                     ActivityIndicator, Image, Feather icons
+  Estados:           comandas, loading, refreshing, filtro, erro, detalhes, logsMap
+  Hooks:             useState (7x), useRef, useCallback (3x), useFocusEffect
+  API:               GET /comandas/?status_comanda=, GET /produtos/{id},
+                     GET /combos/{id}, GET /comandas/{id}/status-logs,
+                     POST /comandas/{id}/status
+  Navegacao:         Nenhuma (tela unica sem saida)
+
+--------------------------------------------------------------------------------
+2.4. FLUXO DE ATENDIMENTO PRESENCIAL (8 telas)
+--------------------------------------------------------------------------------
+
+  Tela: MesasScreen (Lista de Mesas)
+  Rota:              /(tabs)/mesas
+  Arquivo:           app/(tabs)/mesas/index.tsx
+  Tipo de Acesso:    Autenticado (garcom, admin, gerente)
+  Descricao:         Lista todas as mesas com filtros: TODOS, LIVRE, OCUPADA,
+                     RESERVADA. Cada card de mesa exibe numero, status
+                     (colorido), botao de QR code e acao contextual.
+                     Botao para tela de Pedidos Online.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, TouchableOpacity,
+                     ActivityIndicator, Feather icons
+  Estados:           mesas, loading, refreshing, filtro, erro
+  Hooks:             useState (5x), useCallback, useFocusEffect, useAuth,
+                     useSafeAreaInsets
+  API:               GET /mesas/
+  Navegacao:         router.push qr-code, router.navigate nova-comanda,
+                     router.navigate comanda, router.navigate confirmar-chegada,
+                     router.push online
+
+  Tela: NovaComandaScreen
+  Rota:              /(tabs)/mesas/[id]/nova-comanda
+  Arquivo:           app/(tabs)/mesas/[id]/nova-comanda.tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Criacao de comanda para mesa presencial. Busca clientes
+                     com debounce de 400ms. Adiciona itens via tela de cardapio
+                     (passa dados por parametros de rota). Aplica cupom
+                     promocional. Define quantidade de pessoas e forma de
+                     pagamento. Ocupa a mesa automaticamente ao criar.
+  Componentes:       SafeAreaView, ScrollView, TextInput (3), FlatList,
+                     TouchableOpacity, ActivityIndicator, Alert, Feather icons
+  Estados:           clienteBusca, clienteSelecionado, resultadosClientes,
+                     buscandoClientes, showResultados, nomeCliente, qtdPessoas,
+                     itens, metodoId, loading, codigoCupom, cupomAplicado,
+                     validandoCupom
+  Hooks:             useState (14x), useEffect (3x), useRef, useAuth, useRouter,
+                     useLocalSearchParams
+  API:               GET /clientes/busca?q=, GET /metodos-pagamento/,
+                     POST /metodos-pagamento/, POST /promocoes/validar,
+                     POST /mesas/{id}/ocupar, POST /comandas/
+  Navegacao:         router.push cardapio, router.back(),
+                     router.replace('/(tabs)/mesas')
+
+  Tela: ComandaScreen (Detalhe da Comanda) [~943 linhas]
+  Rota:              /(tabs)/mesas/[id]/comanda
+  Arquivo:           app/(tabs)/mesas/[id]/comanda.tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Tela mais complexa do app. Exibe detalhes da comanda
+                     com itens, precos e subtotais. Permite editar/excluir
+                     itens, adicionar mais itens, aplicar/remover cupom,
+                     visualizar timeline de status, finalizar comanda com
+                     calculo de troco, gerar PDF do recibo (expo-print) e
+                     compartilhar, enviar recibo por e-mail.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, Modal (5),
+                     TextInput (4), Image, ScrollView, TouchableOpacity,
+                     ActivityIndicator, Alert, Feather icons
+  Estados:           24 estados (comanda, loading, refreshing, erro, detalhes,
+                     timelineVisible, statusLogs, loadingTimeline, modalVisible,
+                     editingItem, novaQuantidade, novaObservacao, codigoCupom,
+                     cupomAplicado, validandoCupom, finalizarVisible,
+                     metodosPagamento, selectedMetodoId, valorPago, finalizando,
+                     showMetodoPicker, reciboVisible, gerandoPdf)
+  Hooks:             useState (24x), useCallback (2x), useFocusEffect,
+                     useLocalSearchParams, useRouter
+  API:               GET /comandas/?id_mesa=, GET /comandas/{id},
+                     GET /comandas/{id}/status-logs, DELETE /comandas/itens/{id},
+                     PUT /comandas/itens/{id}, POST /comandas/{id}/itens,
+                     POST /promocoes/validar, PUT /comandas/{id},
+                     POST /comandas/{id}/status, POST /comandas/{id}/enviar-recibo,
+                     GET /metodos-pagamento/
+  Navegacao:         router.push cardapio, router.back(),
+                     router.replace('/(tabs)/mesas') apos finalizar
+
+  Tela: CardapioScreen
+  Rota:              /(tabs)/mesas/[id]/cardapio
+  Arquivo:           app/(tabs)/mesas/[id]/cardapio.tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Navegacao do cardapio com busca textual, filtro por
+                     categoria (abas horizontais) e aba de COMBOS. Cada item
+                     exibe imagem, nome, badge de popular, tempo de preparo
+                     e preco. Modal de quantidade/observacao ao adicionar
+                     item. Suporta adicao direta a comanda ou passagem de
+                     dados para nova-comanda.
+  Componentes:       SafeAreaView, FlatList (2), TextInput, Image, Modal,
+                     TouchableOpacity, ActivityIndicator, Alert, Feather icons
+  Estados:           numeroMesa, produtos, combos, categorias, loading, busca,
+                     categoriaAtiva, modalVisible, selectedItem, quantidade,
+                     observacao
+  Hooks:             useState (11x), useEffect, useCallback (2x),
+                     useLocalSearchParams, useRouter
+  API:               GET /produtos/, GET /combos/, GET /categorias/,
+                     GET /mesas/{id}, POST /comandas/{id}/itens
+  Navegacao:         router.push produto/{id}, router.push combo/{id},
+                     router.back()
+
+  Tela: ProdutoDetalheScreen
+  Rota:              /(tabs)/mesas/[id]/produto/[produtoId]
+  Arquivo:           app/(tabs)/mesas/[id]/produto/[produtoId].tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Detalhes completos de um produto com imagem grande,
+                     descricao e associacoes com combos. Stepper de quantidade
+                     e campo de observacao. Adiciona a comanda ativa ou
+                     passa dados para nova-comanda via parametros de rota.
+  Componentes:       SafeAreaView, ScrollView, Image, TextInput, TouchableOpacity,
+                     ActivityIndicator, Alert, Feather icons
+  Estados:           produto, loading, quantidade, observacao
+  Hooks:             useState (4x), useEffect, useLocalSearchParams, useRouter
+  API:               GET /produtos/{id}, POST /comandas/{id}/itens
+  Navegacao:         router.replace comanda, router.push nova-comanda, router.back()
+
+  Tela: ComboDetalheScreen
+  Rota:              /(tabs)/mesas/[id]/combo/[comboId]
+  Arquivo:           app/(tabs)/mesas/[id]/combo/[comboId].tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Detalhes de um combo com lista de produtos incluidos,
+                     imagem e preco. Mesmo padrao do produto detalhe.
+  Componentes:       SafeAreaView, ScrollView, Image, TextInput, TouchableOpacity,
+                     ActivityIndicator, Alert, Feather icons
+  Estados:           combo, loading, quantidade, observacao
+  Hooks:             useState (4x), useEffect, useLocalSearchParams, useRouter
+  API:               GET /combos/{id}, POST /comandas/{id}/itens
+  Navegacao:         router.replace comanda, router.push nova-comanda, router.back()
+
+  Tela: ConfirmarChegadaScreen
+  Rota:              /(tabs)/mesas/[id]/confirmar-chegada
+  Arquivo:           app/(tabs)/mesas/[id]/confirmar-chegada.tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Fluxo de confirmacao de chegada para mesas reservadas.
+                     Duas acoes: Confirmar (ocupa a mesa e redireciona para
+                     nova comanda) ou Liberar (volta a mesa para livre).
+  Componentes:       SafeAreaView, TouchableOpacity (3), ActivityIndicator, Alert
+  Estados:           mesa, loading, confirmando
+  Hooks:             useState (3x), useEffect, useLocalSearchParams, useRouter
+  API:               GET /mesas/{id}, POST /mesas/{id}/ocupar,
+                     POST /mesas/{id}/liberar
+  Navegacao:         router.replace nova-comanda, router.replace mesas, router.back()
+
+  Tela: QRCodeScreen
+  Rota:              /(tabs)/mesas/qr-code
+  Arquivo:           app/(tabs)/mesas/qr-code.tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Gera e exibe QR code da mesa usando react-native-qrcode-svg.
+                     Permite compartilhar o link via Share nativo.
+  Componentes:       SafeAreaView, TouchableOpacity (2), ActivityIndicator,
+                     QRCode, Share
+  Estados:           mesa, loading
+  Hooks:             useState (2x), useEffect, useLocalSearchParams, useRouter
+  API:               GET /mesas/{id}
+  Navegacao:         router.back()
+
+  Tela: OnlineScreen (Pedidos Delivery)
+  Rota:              /(tabs)/mesas/online
+  Arquivo:           app/(tabs)/mesas/online.tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Lista pedidos delivery com filtro por status (TODOS,
+                     ABERTA, EM PREPARO, PRONTA, ENTREGUE). Cada card mostra
+                     numero do pedido, nome do cliente, itens e total.
+  Componentes:       SafeAreaView, FlatList (2), RefreshControl, TouchableOpacity,
+                     ActivityIndicator, Feather icons
+  Estados:           pedidos, loading, refreshing, erro, filtroStatus
+  Hooks:             useState (5x), useCallback, useFocusEffect, useRouter
+  API:               GET /comandas/?tipo_entrega=delivery
+  Navegacao:         router.push novo-pedido-delivery, router.push comanda/{id},
+                     router.back()
+
+  Tela: NovoPedidoDeliveryScreen
+  Rota:              /(tabs)/mesas/novo-pedido-delivery
+  Arquivo:           app/(tabs)/mesas/novo-pedido-delivery.tsx
+  Tipo de Acesso:    Autenticado (garcom)
+  Descricao:         Criacao de pedido delivery. Busca/seleciona cliente
+                     (modal) e endereco (modal). Adiciona itens via cardapio
+                     (mesaId=0 placeholder). Taxa de entrega fixa R$ 5,00.
+  Componentes:       SafeAreaView, ScrollView, TextInput (3), Modal (2),
+                     FlatList (2), TouchableOpacity, ActivityIndicator, Alert, Feather
+  Estados:           itens, metodoId, loading, clienteModal, clientes,
+                     buscaCliente, clienteSel, enderecoModal, enderecos,
+                     enderecoSel, observacao
+  Hooks:             useState (11x), useEffect, useAuth, useRouter
+  API:               GET /metodos-pagamento/, GET /clientes/?busca=,
+                     GET /clientes/{id}, POST /comandas/
+  Navegacao:         router.push cardapio, router.replace mesas, router.back()
+
+--------------------------------------------------------------------------------
+2.5. PAINEL ADMINISTRATIVO (8 telas)
+--------------------------------------------------------------------------------
+
+  Tela: AdminIndexScreen (Menu Principal)
+  Rota:              /(tabs)/admin
+  Arquivo:           app/(tabs)/admin/index.tsx
+  Tipo de Acesso:    Autenticado (admin, gerente)
+  Descricao:         Menu principal com 7 cards de navegacao: Clientes,
+                     Mesas, Produtos, Funcionarios, Promocoes, Comandas,
+                     Auditoria.
+  Componentes:       SafeAreaView, ScrollView, TouchableOpacity (7), Feather icons
+  Estados:           Nenhum
+  Hooks:             useAuth, useRouter
+  API:               Nenhuma
+  Navegacao:         router.push para cada sub-tela admin
+
+  Tela: AdminClientesScreen
+  Rota:              /(tabs)/admin/clientes
+  Arquivo:           app/(tabs)/admin/clientes.tsx
+  Tipo de Acesso:    Autenticado (admin)
+  Descricao:         Lista/search de clientes. Ativar/desativar inline.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, TextInput,
+                     TouchableOpacity, Alert, Feather
+  Estados:           clientes, loading, refreshing, busca
+  Hooks:             useState (4x), useCallback, useFocusEffect
+  API:               GET /clientes/?busca=, POST /clientes/{id}/ativar,
+                     POST /clientes/{id}/desativar
+  Navegacao:         Nenhuma
+
+  Tela: AdminMesasScreen
+  Rota:              /(tabs)/admin/mesas
+  Arquivo:           app/(tabs)/admin/mesas.tsx
+  Tipo de Acesso:    Autenticado (admin)
+  Descricao:         CRUD completo de mesas. Modal criacao/edicao. Acoes:
+                     Reservar, Liberar, Editar, Deletar.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, Modal, TextInput (2),
+                     TouchableOpacity, Alert, Feather
+  Estados:           mesas, loading, refreshing, modalVisible, editando,
+                     numero, lugares, salvando
+  Hooks:             useState (8x), useCallback, useFocusEffect
+  API:               GET /mesas/, POST /mesas/, PUT /mesas/{id},
+                     DELETE /mesas/{id}, POST /mesas/{id}/reservar,
+                     POST /mesas/{id}/liberar
+  Navegacao:         Nenhuma
+
+  Tela: AdminProdutosScreen
+  Rota:              /(tabs)/admin/produtos
+  Arquivo:           app/(tabs)/admin/produtos.tsx
+  Tipo de Acesso:    Autenticado (admin)
+  Descricao:         CRUD de produtos. Modal completo com nome, descricao,
+                     preco, imagem URL, categoria, tempo preparo, switches.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, Modal, ScrollView,
+                     TextInput (6), Switch (2), Image, Alert, Feather
+  Estados:           produtos, categorias, loading, refreshing, modalVisible,
+                     editando, nome, descricao, preco, imagem, categoriaId,
+                     tempoPreparo, popular, disponivel, salvando
+  Hooks:             useState (15x), useCallback, useFocusEffect
+  API:               GET /produtos/, GET /categorias/, POST /produtos/,
+                     PUT /produtos/{id}, DELETE /produtos/{id}
+  Navegacao:         Nenhuma
+
+  Tela: AdminFuncionariosScreen
+  Rota:              /(tabs)/admin/funcionarios
+  Arquivo:           app/(tabs)/admin/funcionarios.tsx
+  Tipo de Acesso:    Autenticado (admin)
+  Descricao:         CRUD de funcionarios. Modal com nome, email, senha,
+                     cargo (botoes coloridos), telefone. Ativar/desativar.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, Modal, TextInput (4),
+                     TouchableOpacity, Alert, Feather
+  Estados:           funcionarios, loading, refreshing, modalVisible, editando,
+                     nome, email, senha, cargo, telefone, salvando
+  Hooks:             useState (11x), useCallback, useFocusEffect
+  API:               GET /funcionarios/, POST /funcionarios/,
+                     PUT /funcionarios/{id}, POST /funcionarios/{id}/ativar,
+                     POST /funcionarios/{id}/desativar
+  Navegacao:         Nenhuma
+
+  Tela: AdminPromocoesScreen
+  Rota:              /(tabs)/admin/promocoes
+  Arquivo:           app/(tabs)/admin/promocoes.tsx
+  Tipo de Acesso:    Autenticado (admin)
+  Descricao:         CRUD de codigos promocionais. Modal com codigo,
+                     percentual desconto, validade, ativo switch.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, Modal, TextInput (3),
+                     Switch, Alert, Feather
+  Estados:           promocoes, loading, refreshing, modalVisible, editando,
+                     codigo, desconto, validade, ativo, salvando
+  Hooks:             useState (10x), useCallback, useFocusEffect
+  API:               GET /promocoes/, POST /promocoes/, PUT /promocoes/{id},
+                     DELETE /promocoes/{id}
+  Navegacao:         Nenhuma
+
+  Tela: AdminAuditoriaScreen
+  Rota:              /(tabs)/admin/auditoria
+  Arquivo:           app/(tabs)/admin/auditoria.tsx
+  Tipo de Acesso:    Autenticado (admin, gerente)
+  Descricao:         Lista read-only dos 50 logs de auditoria mais recentes.
+                     Acoes coloridas (create=verde, update=laranja, delete=vermelho).
+  Componentes:       SafeAreaView, FlatList, RefreshControl, TouchableOpacity,
+                     ActivityIndicator, Feather
+  Estados:           logs, loading, refreshing
+  Hooks:             useState (3x), useCallback, useFocusEffect
+  API:               GET /audit-logs/?limite=50
+  Navegacao:         Nenhuma
+
+  Tela: AdminComandasScreen
+  Rota:              /(tabs)/admin/comandas
+  Arquivo:           app/(tabs)/admin/comandas.tsx
+  Tipo de Acesso:    Autenticado (admin, gerente)
+  Descricao:         Lista de comandas com filtros por status e data
+                     (DateTimePicker nativo). Visualizacao de recibo com
+                     PDF (expo-print) e envio por e-mail.
+  Componentes:       SafeAreaView, FlatList, RefreshControl, Modal (3),
+                     DateTimePicker, TouchableOpacity, Alert, Feather,
+                     Print, Sharing
+  Estados:           comandas, loading, refreshing, statusFilter, dataInicio,
+                     dataFim, showStatusPicker, showPicker, detalhes,
+                     reciboVisible, reciboComanda, gerandoPdf
+  Hooks:             useState (12x), useCallback (2x), useFocusEffect
+  API:               GET /comandas/ (filtros), GET /comandas/{id},
+                     GET /produtos/{id}, GET /combos/{id},
+                     POST /comandas/{id}/enviar-recibo
+  Navegacao:         Nenhuma
+
+--------------------------------------------------------------------------------
+2.6. PERFIL DO FUNCIONARIO (1 tela)
+--------------------------------------------------------------------------------
+
+  Tela: PerfilFuncionarioScreen
+  Rota:              /(tabs)/perfil-funcionario
+  Arquivo:           app/(tabs)/perfil-funcionario/index.tsx
+  Tipo de Acesso:    Autenticado (qualquer cargo)
+  Descricao:         Perfil do funcionario logado. Avatar com iniciais,
+                     informacoes pessoais, alteracao de senha (modal) e
+                     logout.
+  Componentes:       SafeAreaView, ScrollView, Modal, TextInput (3),
+                     TouchableOpacity (4), ActivityIndicator, Alert, Feather
+  Estados:           changePasswordVisible, oldPassword, newPassword,
+                     confirmPassword, loading, passwordError
+  Hooks:             useState (6x), useAuth, useRouter
+  API:               POST /funcionarios/{id}/alterar-senha
+  Navegacao:         router.replace('/') apos logout
+
+================================================================================
+3. API BACKEND - PRINCIPAIS FUNCIONALIDADES
+================================================================================
+
+  Total de routers: 11
+  Total de endpoints: 77
+  Autenticacao: JWT Bearer token via OAuth2PasswordBearer
+  Banco: Postgres via SQLAlchemy 2.0
+
+--------------------------------------------------------------------------------
+3.1. AUTENTICACAO (/auth) - 3 endpoints - Tag: autenticacao
+--------------------------------------------------------------------------------
+
+  POST /auth/token
+    Descricao:    Login unificado (clientes e funcionarios). OAuth2 form.
+    Parametros:   OAuth2PasswordRequestForm (username, password)
+    Resposta:     { "access_token": "eyJ...", "token_type": "bearer" }
+    Regras:       Busca em Cliente, depois Funcionario. Hash bcrypt.
+                  Loga auditorio. Atualiza ultimo_login.
+    Telas:        Login (via AuthContext.signIn)
+
+  POST /auth/forgot-password
+    Descricao:    Envia codigo 6-digit por e-mail se email existir.
+    Parametros:   { email: EmailStr }
+    Resposta:     { message, token_ttl_minutes: 30 }
+    Regras:       Cria PasswordResetToken. Envia e-mail SMTP.
+    Telas:        ForgotPassword
+
+  POST /auth/reset-password
+    Descricao:    Redefine senha com codigo de 6 digitos.
+    Parametros:   { email, token: "123456", new_password: "nova" }
+    Resposta:     { message: "Senha redefinida" }
+    Regras:       Verifica token valido, nao expirado e nao usado.
+    Telas:        ResetPassword
+
+--------------------------------------------------------------------------------
+3.2. PRODUTOS (/produtos) - 5 endpoints - Tag: produtos
+--------------------------------------------------------------------------------
+
+  POST /produtos/
+    Descricao:    Cria produto. Admin.
+    Parametros:   ProdutoCreate { nome, descricao, imagem_link, preco,
+                                  id_categoria, popular?, disponivel?,
+                                  tempo_preparo_medio? }
+    Resposta:     ProdutoResponse (201)
+    Telas:        Admin Produtos
+
+  GET /produtos/
+    Descricao:    Lista produtos (publico). Filtros: disponivel, categoria_id.
+    Resposta:     [ ProdutoResponse, ... ]
+    Telas:        Cardapio, Admin Produtos, Admin Comandas
+
+  GET /produtos/{produto_id}
+    Descricao:    Obtem produto por ID (publico).
+    Resposta:     ProdutoResponse (com categoria_rel e combos)
+    Telas:        Produto Detalhe, Comanda, Cozinha, Admin Comandas
+
+  PUT /produtos/{produto_id}
+    Descricao:    Atualiza produto (parcial). Admin.
+    Telas:        Admin Produtos
+
+  DELETE /produtos/{produto_id}
+    Descricao:    Exclui produto. Admin. Bloqueia se vinculado a combo.
+    Telas:        Admin Produtos
+
+--------------------------------------------------------------------------------
+3.3. COMBOS (/combos) - 7 endpoints - Tag: combos
+--------------------------------------------------------------------------------
+
+  POST /combos/
+    Descricao:    Cria combo com produtos_ids. Admin.
+    Telas:        (Admin - CRUD nao implementado no app)
+  GET /combos/
+    Descricao:    Lista combos (publico). Filtros: disponivel, popular.
+    Telas:        Cardapio, Admin Comandas
+  GET /combos/{combo_id}
+    Descricao:    Obtem combo por ID (publico). Com produtos.
+    Telas:        Combo Detalhe, Comanda, Cozinha, Admin Comandas
+  PUT /combos/{combo_id}        - Atualiza combo. Admin.
+  DELETE /combos/{combo_id}     - Exclui combo. Admin.
+  POST /combos/{combo_id}/produtos/{produto_id}   - Add produto ao combo. Admin.
+  DELETE /combos/{combo_id}/produtos/{produto_id}  - Remove produto do combo. Admin.
+
+--------------------------------------------------------------------------------
+3.4. CATEGORIAS (/categorias) - 5 endpoints - Tag: categorias
+--------------------------------------------------------------------------------
+
+  GET /categorias/     - Lista (publico). Telas: Cardapio, Admin Produtos
+  GET /categorias/{categoria_id} - Obtem por ID (publico)
+  POST /categorias/    - Cria. Admin.
+  PUT /categorias/{categoria_id} - Atualiza. Admin.
+  DELETE /categorias/{categoria_id} - Exclui. Admin. Bloqueia se vinculos.
+
+--------------------------------------------------------------------------------
+3.5. METODOS PAGAMENTO (/metodos-pagamento) - 5 endpoints - Tag: metodos_pagamento
+--------------------------------------------------------------------------------
+
+  GET /metodos-pagamento/    - Lista (publico). Filtro: ativo.
+       Telas: Nova Comanda, Comanda, Novo Delivery
+  GET /metodos-pagamento/{metodo_id} - Obtem por ID (publico)
+  POST /metodos-pagamento/   - Cria. Funcionario.
+       Telas: Nova Comanda, Comanda (cria 'Dinheiro')
+  PUT /metodos-pagamento/{metodo_id} - Atualiza. Funcionario.
+  DELETE /metodos-pagamento/{metodo_id} - Exclui. Funcionario. Bloqueia vinculos.
+
+--------------------------------------------------------------------------------
+3.6. CLIENTES (/clientes) - 13 endpoints - Tag: clientes
+--------------------------------------------------------------------------------
+
+  POST /clientes/
+    Descricao:    Cadastro publico. Suporta enderecos aninhados.
+    Parametros:   ClienteCreate { nome, email, senha, enderecos?: [...] }
+    Telas:        (Publico - nao implementado no app)
+
+  GET /clientes/
+    Descricao:    Lista clientes. Admin. Filtros: search, ativo, order_by.
+    Telas:        Admin Clientes, Novo Delivery
+
+  GET /clientes/me
+    Descricao:    Perfil do cliente autenticado.
+
+  GET /clientes/busca
+    Descricao:    Busca por nome/email/documento. Funcionario. ?q=termo
+    Telas:        Nova Comanda
+
+  GET /clientes/{cliente_id}
+    Descricao:    Obtem por ID. Admin ou proprio cliente.
+    Telas:        Novo Delivery (carrega enderecos)
+
+  PUT /clientes/{cliente_id}     - Atualiza. Admin ou proprio.
+  DELETE /clientes/{cliente_id}  - Exclui. Admin. Bloqueia se comandas.
+
+  POST /clientes/{cliente_id}/enderecos    - Add endereco.
+  PUT /clientes/enderecos/{endereco_id}    - Atualiza endereco.
+  DELETE /clientes/enderecos/{endereco_id} - Exclui. Bloqueia se ultimo.
+
+  POST /clientes/{cliente_id}/alterar-senha - Altera senha (proprio cliente).
+  POST /clientes/{cliente_id}/ativar         - Reativa. Admin.
+       Telas: Admin Clientes
+  POST /clientes/{cliente_id}/desativar      - Desativa. Admin ou proprio.
+       Telas: Admin Clientes
+
+--------------------------------------------------------------------------------
+3.7. MESAS (/mesas) - 8 endpoints - Tag: mesas
+--------------------------------------------------------------------------------
+
+  GET /mesas/        - Lista (publico). Filtro: status.
+       Telas: Mesas, Admin Mesas
+  GET /mesas/{mesa_id} - Obtem por ID (publico).
+       Telas: QR Code, Confirmar Chegada, Cardapio
+  POST /mesas/       - Cria. Funcionario. Auto-gera QR code.
+       Telas: Admin Mesas
+  PUT /mesas/{mesa_id} - Atualiza. Funcionario.
+       Telas: Admin Mesas
+  DELETE /mesas/{mesa_id} - Exclui. Funcionario. Bloqueia se comandas.
+       Telas: Admin Mesas
+  POST /mesas/{mesa_id}/ocupar   - Status -> ocupada. Funcionario.
+       Telas: Nova Comanda, Confirmar Chegada
+  POST /mesas/{mesa_id}/liberar  - Status -> livre. Funcionario.
+       Telas: Confirmar Chegada, Admin Mesas
+  POST /mesas/{mesa_id}/reservar - Status -> reservada. Funcionario.
+       Telas: Admin Mesas
+
+--------------------------------------------------------------------------------
+3.8. CODIGOS PROMOCIONAIS (/promocoes) - 6 endpoints - Tag: codigos_promocionais
+--------------------------------------------------------------------------------
+
+  GET /promocoes/     - Lista (publico). Filtro: ativo.
+       Telas: Admin Promocoes
+  GET /promocoes/{promo_id} - Obtem por ID (publico).
+  POST /promocoes/validar
+    Descricao:    Valida codigo contra valor do pedido.
+    Parametros:   { codigo, valor_pedido }
+    Resposta:     { valido, desconto_percentual, valor_desconto,
+                    valor_final, mensagem }
+    Regras:       Verifica existencia, ativo, nao expirado. Calcula desconto.
+    Telas:        Nova Comanda, Comanda
+  POST /promocoes/    - Cria. Funcionario. Telas: Admin Promocoes
+  PUT /promocoes/{promo_id} - Atualiza. Funcionario. Telas: Admin Promocoes
+  DELETE /promocoes/{promo_id} - Exclui. Funcionario. Bloqueia se usado.
+       Telas: Admin Promocoes
+
+--------------------------------------------------------------------------------
+3.9. FUNCIONARIOS (/funcionarios) - 9 endpoints - Tag: funcionarios
+--------------------------------------------------------------------------------
+
+  POST /funcionarios/  - Cria. Admin. Telas: Admin Funcionarios
+  GET /funcionarios/   - Lista. Admin. Filtros: ativo, cargo.
+       Telas: Admin Funcionarios
+  GET /funcionarios/me - Perfil do funcionario autenticado.
+       Telas: Login, Perfil Funcionario
+  GET /funcionarios/{funcionario_id} - Obtem por ID. Admin ou proprio.
+  PUT /funcionarios/{funcionario_id} - Atualiza. Admin (tudo) ou
+       proprio (nome/telefone). Telas: Admin Funcionarios
+  DELETE /funcionarios/{funcionario_id} - Exclui. Admin. Bloqueia comandas.
+  POST /funcionarios/{funcionario_id}/alterar-senha - Altera propria senha.
+       Telas: Perfil Funcionario
+  POST /funcionarios/{funcionario_id}/ativar   - Reativa. Admin.
+       Telas: Admin Funcionarios
+  POST /funcionarios/{funcionario_id}/desativar - Desativa. Admin.
+       Telas: Admin Funcionarios
+
+--------------------------------------------------------------------------------
+3.10. AUDITORIA (/audit-logs) - 5 endpoints - Tag: auditoria
+--------------------------------------------------------------------------------
+
+  GET /audit-logs/    - Lista logs com filtros. Admin/Gerente.
+       Parametros: usuario_tipo, acao, tabela_afetada, data, limite, offset
+       Telas: Admin Auditoria
+  GET /audit-logs/{log_id} - Obtem log por ID.
+  GET /audit-logs/acoes/disponiveis - Lista tipos de acao nos logs.
+  GET /audit-logs/tabelas/disponiveis - Lista tabelas afetadas.
+  GET /audit-logs/estatisticas/por-acao - Contagem por acao.
+       Parametros: data_inicio, data_fim
+
+  Eventos auditados: produto CRUD, combo CRUD + associacoes,
+  cliente CRUD + enderecos + senha, comanda CRUD + itens + status
+
+--------------------------------------------------------------------------------
+3.11. COMANDAS (/comandas) - 11 endpoints - Tag: comandas
+--------------------------------------------------------------------------------
+
+  POST /comandas/
+    Descricao:    Cria comanda com itens. Cliente cria so para si.
+    Parametros:   ComandaCreate { id_cliente?, id_mesa?, id_garcom?,
+                  id_metodo_pagamento, tipo_entrega, origem,
+                  pedido_itens: [{ id_produto?, id_combo?, quantidade,
+                  preco_unitario, subtotal, observacao? }] }
+    Resposta:     ComandaResponse (201)
+    Regras:       Valida referencias. Registra status log inicial.
+    Telas:        Nova Comanda, Novo Delivery
+
+  GET /comandas/
+    Descricao:    Lista comandas. Cliente ve so as suas.
+    Parametros:   status_comanda, tipo_entrega, id_mesa, data, limite, offset
+    Telas:        Cozinha, Comanda, Online, Admin Comandas
+
+  GET /comandas/{comanda_id}
+    Descricao:    Obtem comanda por ID (todos relacionamentos).
+    Telas:        Comanda, Admin Comandas
+
+  PUT /comandas/{comanda_id}         - Atualiza dados. Funcionario.
+       Telas: Comanda
+  DELETE /comandas/{comanda_id}      - Exclui. So aberta/cancelada. Funcionario.
+  POST /comandas/{comanda_id}/itens  - Add item. Reverte em_preparo->aberta.
+       Telas: Cardapio, Produto Detalhe, Combo Detalhe, Comanda
+  PUT /comandas/itens/{item_id}      - Edita item. Reverte em_preparo->aberta.
+       Telas: Comanda
+  DELETE /comandas/itens/{item_id}   - Remove item. Reverte em_preparo->aberta.
+       Telas: Comanda
+
+  POST /comandas/{comanda_id}/status
+    Descricao:    Altera status via maquina de estados.
+    Parametros:   StatusUpdateRequest { status_novo, observacao? }
+    Regras:
+      Transicoes: aberta -> em_preparo/cancelada
+                  em_preparo -> pronta/cancelada/aberta
+                  pronta -> entregue/cancelada/paga/aberta
+                  entregue -> paga
+                  cancelada -> (nenhuma)
+                  paga -> (nenhuma)
+      Ao pagar: libera mesa, envia e-mail de recibo
+    Telas:        Cozinha, Comanda
+
+  POST /comandas/{comanda_id}/enviar-recibo
+    Descricao:    Envia recibo por e-mail. Funcionario.
+    Telas:        Comanda, Admin Comandas
+
+  GET /comandas/{comanda_id}/status-logs
+    Descricao:    Historico de status. Cliente ve so seu.
+    Telas:        Cozinha, Comanda
+
+================================================================================
+4. RELACIONAMENTO ENTRE APP E API (MATRIZ)
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1. MATRIZ TELA -> ENDPOINTS
+--------------------------------------------------------------------------------
+
+  Cada tela do aplicativo e os endpoints que ela consome:
+
+  Login:
+    POST /auth/token, GET /funcionarios/me (via AuthContext)
+
+  ForgotPassword:
+    POST /auth/forgot-password
+
+  ResetPassword:
+    POST /auth/reset-password
+
+  Cozinha:
+    GET /comandas/?status_comanda=, GET /produtos/{id},
+    GET /combos/{id}, GET /comandas/{id}/status-logs,
+    POST /comandas/{id}/status
+
+  Mesas:
+    GET /mesas/
+
+  Online:
+    GET /comandas/?tipo_entrega=delivery
+
+  Novo Delivery:
+    GET /metodos-pagamento/, GET /clientes/?busca=,
+    GET /clientes/{id}, POST /comandas/
+
+  QR Code:
+    GET /mesas/{id}
+
+  Nova Comanda:
+    GET /clientes/busca?q=, GET /metodos-pagamento/,
+    POST /metodos-pagamento/, POST /promocoes/validar,
+    POST /mesas/{id}/ocupar, POST /comandas/
+
+  Comanda (detalhe):
+    GET /comandas/?id_mesa=, GET /comandas/{id},
+    GET /comandas/{id}/status-logs, DELETE /comandas/itens/{id},
+    PUT /comandas/itens/{id}, POST /comandas/{id}/itens,
+    POST /promocoes/validar, PUT /comandas/{id},
+    POST /comandas/{id}/status, POST /comandas/{id}/enviar-recibo,
+    GET /metodos-pagamento/
+
+  Cardapio:
+    GET /produtos/, GET /combos/, GET /categorias/,
+    GET /mesas/{id}, POST /comandas/{id}/itens
+
+  Produto Detalhe:
+    GET /produtos/{id}, POST /comandas/{id}/itens
+
+  Combo Detalhe:
+    GET /combos/{id}, POST /comandas/{id}/itens
+
+  Confirmar Chegada:
+    GET /mesas/{id}, POST /mesas/{id}/ocupar,
+    POST /mesas/{id}/liberar
+
+  Admin Clientes:
+    GET /clientes/?busca=, POST /clientes/{id}/ativar,
+    POST /clientes/{id}/desativar
+
+  Admin Mesas:
+    GET /mesas/, POST /mesas/, PUT /mesas/{id},
+    DELETE /mesas/{id}, POST /mesas/{id}/reservar,
+    POST /mesas/{id}/liberar
+
+  Admin Produtos:
+    GET /produtos/, GET /categorias/, POST /produtos/,
+    PUT /produtos/{id}, DELETE /produtos/{id}
+
+  Admin Funcionarios:
+    GET /funcionarios/, POST /funcionarios/,
+    PUT /funcionarios/{id}, POST /funcionarios/{id}/ativar,
+    POST /funcionarios/{id}/desativar
+
+  Admin Promocoes:
+    GET /promocoes/, POST /promocoes/, PUT /promocoes/{id},
+    DELETE /promocoes/{id}
+
+  Admin Auditoria:
+    GET /audit-logs/?limite=50
+
+  Admin Comandas:
+    GET /comandas/ (filtros), GET /comandas/{id},
+    GET /produtos/{id}, GET /combos/{id},
+    POST /comandas/{id}/enviar-recibo
+
+  Perfil Funcionario:
+    POST /funcionarios/{id}/alterar-senha
+
+--------------------------------------------------------------------------------
+4.2. MATRIZ ENDPOINT -> TELAS
+--------------------------------------------------------------------------------
+
+  POST /auth/token              -> Login (AuthContext)
+  GET /funcionarios/me          -> Login (AuthContext), Perfil Funcionario
+  POST /auth/forgot-password    -> ForgotPassword
+  POST /auth/reset-password     -> ResetPassword
+
+  GET /produtos/                -> Cardapio, Admin Produtos, Admin Comandas
+  GET /produtos/{id}            -> Produto Detalhe, Comanda, Cozinha, Admin Comandas
+  POST /produtos/               -> Admin Produtos
+  PUT /produtos/{id}            -> Admin Produtos
+  DELETE /produtos/{id}         -> Admin Produtos
+
+  GET /combos/                  -> Cardapio, Admin Comandas
+  GET /combos/{id}              -> Combo Detalhe, Comanda, Cozinha, Admin Comandas
+  POST /combos/                 -> (Admin - CRUD nao implementado no app)
+
+  GET /categorias/              -> Cardapio, Admin Produtos
+
+  GET /metodos-pagamento/       -> Nova Comanda, Comanda, Novo Delivery
+  POST /metodos-pagamento/      -> Nova Comanda, Comanda (cria 'Dinheiro')
+
+  GET /clientes/                -> Admin Clientes, Novo Delivery
+  GET /clientes/busca           -> Nova Comanda
+  GET /clientes/{id}            -> Novo Delivery
+  POST /clientes/{id}/ativar    -> Admin Clientes
+  POST /clientes/{id}/desativar -> Admin Clientes
+
+  GET /mesas/                   -> Mesas, Admin Mesas
+  GET /mesas/{id}               -> QR Code, Confirmar Chegada, Cardapio
+  POST /mesas/                  -> Admin Mesas
+  PUT /mesas/{id}               -> Admin Mesas
+  DELETE /mesas/{id}            -> Admin Mesas
+  POST /mesas/{id}/ocupar       -> Nova Comanda, Confirmar Chegada
+  POST /mesas/{id}/liberar      -> Confirmar Chegada, Admin Mesas
+  POST /mesas/{id}/reservar     -> Admin Mesas
+
+  GET /promocoes/               -> Admin Promocoes
+  POST /promocoes/              -> Admin Promocoes
+  PUT /promocoes/{id}           -> Admin Promocoes
+  DELETE /promocoes/{id}        -> Admin Promocoes
+  POST /promocoes/validar       -> Nova Comanda, Comanda
+
+  GET /funcionarios/            -> Admin Funcionarios
+  POST /funcionarios/           -> Admin Funcionarios
+  PUT /funcionarios/{id}        -> Admin Funcionarios
+  POST /funcionarios/{id}/ativar  -> Admin Funcionarios
+  POST /funcionarios/{id}/desativar -> Admin Funcionarios
+  POST /funcionarios/{id}/alterar-senha -> Perfil Funcionario
+
+  GET /audit-logs/              -> Admin Auditoria
+
+  POST /comandas/               -> Nova Comanda, Novo Delivery
+  GET /comandas/                -> Cozinha, Comanda, Online, Admin Comandas
+  GET /comandas/{id}            -> Comanda, Admin Comandas
+  PUT /comandas/{id}            -> Comanda
+  POST /comandas/{id}/itens     -> Cardapio, Produto Detalhe, Combo Detalhe, Comanda
+  PUT /comandas/itens/{id}      -> Comanda
+  DELETE /comandas/itens/{id}   -> Comanda
+  POST /comandas/{id}/status    -> Cozinha, Comanda
+  POST /comandas/{id}/enviar-recibo -> Comanda, Admin Comandas
+  GET /comandas/{id}/status-logs -> Cozinha, Comanda
+
+================================================================================
+5. OBSERVACOES TECNICAS RELEVANTES
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1. AUTENTICACAO
+--------------------------------------------------------------------------------
+
+  - Mecanismo: JWT (JSON Web Token) via OAuth2 Password Bearer flow
+  - Dois tipos de usuario: Cliente e Funcionario (unificados no mesmo
+    endpoint /auth/token e no mesmo dependency get_current_user)
+  - Token payload: { sub: email, tipo: "cliente"|"funcionario", cargo? }
+  - Token armazenado no AsyncStorage do app (chave: @access_token)
+  - Interceptor Axios: le o token e anexa como Authorization: Bearer
+  - SignOut: limpa AsyncStorage (@access_token, @user_data) e remove
+    header padrao do Axios
+  - Configuracoes: SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES via .env
+
+--------------------------------------------------------------------------------
+5.2. SEGURANCA
+--------------------------------------------------------------------------------
+
+  - Senhas hasheadas com pwdlib (bcrypt/argon2 adaptativo)
+  - Controle de acesso por decorator/verificacao no codigo:
+      * Publico: sem auth
+      * Qualquer autenticado (cliente ou funcionario)
+      * Cliente apenas: GET /clientes/me, alterar-senha
+      * Funcionario apenas: metodos-pagamento CRUD, mesas CRUD,
+        comandas PUT/DELETE/enviar-recibo
+      * Admin apenas: produtos CRUD, combos CRUD, categorias CRUD,
+        funcionarios CRUD, clientes list/delete/ativar
+      * Admin ou Gerente: auditoria logs
+      * Proprio usuario: atualizar/visualizar proprio perfil
+  - CORS configurado para allow_origins=["*"]
+
+--------------------------------------------------------------------------------
+5.3. AUDITORIA
+--------------------------------------------------------------------------------
+
+  - Funcao audit.log_audit() registra operacoes em tabela audit_log
+  - Captura: usuario_tipo, usuario_id, acao, tabela_afetada, registro_id,
+    dados_anteriores, dados_novos, IP, User-Agent
+  - Eventos auditados: produto CRUD, combo CRUD (+ associacoes),
+    cliente CRUD (+enderecos, +senha), comanda CRUD (+itens, +status)
+  - Acesso: apenas admin e gerente
+  - Logs nao sao sobrescritos - append-only
+
+--------------------------------------------------------------------------------
+5.4. MAQUINA DE ESTADOS DA COMANDA
+--------------------------------------------------------------------------------
+
+  Transicoes validas:
+    aberta --------> em_preparo (cozinha inicia)
+    aberta --------> cancelada (garcom ou cliente)
+    em_preparo ----> pronta (cozinha finaliza)
+    em_preparo ----> cancelada
+    em_preparo ----> aberta (reversao ao editar item)
+    pronta --------> entregue (garcom entrega)
+    pronta --------> cancelada
+    pronta --------> paga (finalizacao)
+    pronta --------> aberta (reversao)
+    entregue ------> paga (finalizacao)
+    cancelada -----> (terminal)
+    paga ----------> (terminal)
+
+  Efeitos colaterais ao pagar:
+    - Mesa liberada (status -> livre)
+    - E-mail de recibo enviado ao cliente
+    - Status_pagamento -> pago
+
+  Acoes que revertem em_preparo/pronta para aberta:
+    - Adicionar item
+    - Editar item (quantidade/observacao)
+    - Remover item
+
+--------------------------------------------------------------------------------
+5.5. PADROES DE PROJETO NO APP
+--------------------------------------------------------------------------------
+
+  - useFocusEffect: todas as telas de lista usam este hook para
+    recarregar dados ao ganhar foco (garante dados atualizados)
+  - useCallback: funcoes de fetch envolvidas em useCallback para
+    evitar re-renderizacoes desnecessarias
+  - useRef: usado para debounce de busca (nova-comanda) e cache de
+    detalhes de produtos/combos (cozinha)
+  - Navegacao por parametros de rota: telas passam dados entre si
+    via params do expo-router (ex: cardapio -> nova-comanda, comanda)
+  - AsyncStorage: apenas para token JWT e dados do usuario logado
+  - Role-based routing: redirect em app/index.tsx + visibilidade de
+    abas em (tabs)/_layout.tsx
+
+--------------------------------------------------------------------------------
+5.6. BIBLIOTECAS NOTAVEIS
+--------------------------------------------------------------------------------
+
+  Axios:
+    - Cliente HTTP unico (services/api.ts)
+    - Request interceptor para anexar JWT automaticamente
+    - Base URL dinamica via Constants.expoConfig.hostUri
+
+  expo-print + expo-sharing:
+    - Usado em ComandaScreen e AdminComandasScreen
+    - Gera HTML de recibo, converte para PDF via Print.printToFileAsync
+    - Compartilha via Sharing.shareAsync
+
+  react-native-qrcode-svg:
+    - Usado em QRCodeScreen
+    - Renderiza QR code a partir de string URL
+
+  @react-native-community/datetimepicker:
+    - Usado em AdminComandasScreen
+    - Alterna entre modais nativas do Android e iOS
+    - Tratamento especial para iOS (modal vs inline)
+
+--------------------------------------------------------------------------------
+5.7. TRATAMENTO DE ERROS
+--------------------------------------------------------------------------------
+
+  App Mobile:
+    - Erros de API capturados em try/catch
+    - Exibidos via Alert.alert() ou variavel de estado error
+    - Silencio em alguns casos (ex: admin/auditoria falha sem alerta)
+    - Loading states controlados por booleanos
+
+  API:
+    - Erros de validacao: HTTP 422 (Pydantic)
+    - Nao encontrado: HTTP 404 (excpetion customizada)
+    - Nao autorizado: HTTP 401 (JWT invalido/expirado)
+    - Proibido: HTTP 403 (cargo sem permissao)
+    - Conflito: HTTP 409 (ex: produto vinculado a combo)
+    - Erro interno: HTTP 500
+    - Respostas padrao: MessageResponse { message, success }
+
+--------------------------------------------------------------------------------
+5.8. MODELOS DE DADOS - RESUMO
+--------------------------------------------------------------------------------
+
+  15 tabelas no banco SQLite:
+    categoria_produto   - Categorias de produtos
+    produto             - Produtos do cardapio
+    combo               - Combos promocionais
+    combo_produto       - Associacao N:N entre combo e produto
+    metodo_pagamento    - Formas de pagamento (dinheiro, cartao, pix...)
+    cliente             - Clientes cadastrados
+    endereco_cliente    - Enderecos dos clientes (1:N)
+    funcionario         - Funcionarios (garcom, cozinha, admin, gerente)
+    mesa                - Mesas do salao
+    comanda             - Pedidos (comandas abertas/finalizadas)
+    pedido_item         - Itens de cada comanda (N:1)
+    status_comanda_log  - Historico de status das comandas
+    cod_promocional     - Codigos de cupom de desconto
+    audit_log           - Auditoria de operacoes
+    password_reset_token - Tokens de redefinicao de senha
+
+  Principais relacionamentos:
+    - produto N:1 categoria_produto
+    - produto N:N combo (via combo_produto)
+    - endereco_cliente N:1 cliente
+    - comanda N:1 cliente, N:1 mesa, N:1 funcionario (garcom)
+    - comanda N:1 metodo_pagamento, N:1 cod_promocional
+    - pedido_item N:1 comanda, N:1 produto?, N:1 combo?
+    - status_comanda_log N:1 comanda
+    - audit_log N:1 funcionario
+
+--------------------------------------------------------------------------------
+5.9. CONFIGURACAO (VARIAVEIS DE AMBIENTE)
+--------------------------------------------------------------------------------
+
+  Arquivo .env na raiz da API:
+    DATABASE_URL             - URL do banco SQLite
+    SECRET_KEY               - Chave secreta JWT
+    ALGORITHM                - Algoritmo JWT (ex: HS256)
+    ACCESS_TOKEN_EXPIRE_MINUTES - Tempo de expiracao do token
+    ADMIN_EMAIL              - Email do admin inicial (seed)
+    ADMIN_PASSWORD           - Senha do admin inicial
+    ADMIN_NAME               - Nome do admin inicial
+    BASE_URL                 - URL base para QR code (ex: http://localhost:8000)
+    SMTP_*                   - Configuracoes de e-mail (server, port, user, password)
+
+================================================================================
+                         FIM DA DOCUMENTACAO
+================================================================================

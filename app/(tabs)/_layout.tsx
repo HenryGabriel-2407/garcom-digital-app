@@ -18,9 +18,9 @@ export default function TabsLayout() {
           backgroundColor: '#FFF',
           borderTopColor: '#EEE',
           borderTopWidth: 1,
-          paddingBottom: 8,
-          paddingTop: 4,
-          height: 60,
+          paddingBottom: 12,
+          paddingTop: 6,
+          height: 64,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -75,6 +75,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="admin/funcionarios"          options={{ href: null }} />
       <Tabs.Screen name="admin/promocoes"             options={{ href: null }} />
       <Tabs.Screen name="admin/auditoria"             options={{ href: null }} />
+      <Tabs.Screen name="admin/comandas"              options={{ href: null }} />
       <Tabs.Screen name="perfil-funcionario/redefinir-senha" options={{ href: null }} />
     </Tabs>
   );

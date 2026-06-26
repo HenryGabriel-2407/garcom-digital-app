@@ -49,13 +49,9 @@ export const AuthProvider: React.FC<{
 
         setUser(JSON.parse(userData));
 
-        console.log('Usuário restaurado da sessão');
       }
     } catch (error) {
-      console.error(
-        'Erro ao carregar sessão:',
-        error
-      );
+      console.error('Erro ao carregar sessão:', error);
     } finally {
       setLoading(false);
     }

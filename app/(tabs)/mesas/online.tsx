@@ -47,7 +47,7 @@ export default function OnlineScreen() {
     if (showLoader) setLoading(true);
     setErro('');
     try {
-      const params: Record<string, any> = { origem: 'web' };
+      const params: Record<string, any> = { tipo_entrega: 'delivery' };
       if (filtroStatus) params.status_comanda = filtroStatus;
       const { data } = await api.get<DeliveryComanda[]>('/comandas/', { params });
       setPedidos(data);
@@ -189,8 +189,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#8D0000' },
   novoBtn: {

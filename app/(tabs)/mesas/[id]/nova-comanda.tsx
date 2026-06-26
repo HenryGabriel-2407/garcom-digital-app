@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, Alert,
+  ScrollView, ActivityIndicator, Alert, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -33,6 +33,14 @@ interface MetodoPagamento {
   ativo: boolean;
 }
 
+interface ClienteResult {
+  id: number;
+  nome: string;
+  email: string;
+  documento?: string;
+  telefone?: string;
+}
+
 export default function NovaComandaScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -47,6 +55,13 @@ export default function NovaComandaScreen() {
   }>();
 
   const mesaId = params.id;
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const [clienteBusca, setClienteBusca] = useState('');
+  const [clienteSelecionado, setClienteSelecionado] = useState<ClienteResult | null>(null);
+  const [resultadosClientes, setResultadosClientes] = useState<ClienteResult[]>([]);
+  const [buscandoClientes, setBuscandoClientes] = useState(false);
+  const [showResultados, setShowResultados] = useState(false);
 
   const [nomeCliente, setNomeCliente] = useState('');
   const [qtdPessoas, setQtdPessoas] = useState(1);
@@ -84,6 +99,44 @@ export default function NovaComandaScreen() {
       });
     }
   }, [params.itemId]);
+
+  // Busca clientes com debounce
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (clienteSelecionado) return;
+    const q = clienteBusca.trim();
+    if (q.length < 2) {
+      setResultadosClientes([]);
+      setShowResultados(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setBuscandoClientes(true);
+      try {
+        const { data } = await api.get<ClienteResult[]>('/clientes/busca', { params: { q } });
+        setResultadosClientes(data);
+        setShowResultados(data.length > 0);
+      } catch {
+        setResultadosClientes([]);
+      } finally {
+        setBuscandoClientes(false);
+      }
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [clienteBusca, clienteSelecionado]);
+
+  const selecionarCliente = (c: ClienteResult) => {
+    setClienteSelecionado(c);
+    setClienteBusca('');
+    setResultadosClientes([]);
+    setShowResultados(false);
+  };
+
+  const limparClienteSelecionado = () => {
+    setClienteSelecionado(null);
+    setClienteBusca('');
+    setNomeCliente('');
+  };
 
   // Busca métodos de pagamento
   useEffect(() => {
@@ -170,9 +223,14 @@ export default function NovaComandaScreen() {
         }));
 
         // 3. Cria comanda com todos os campos esperados
+        const observacao = clienteSelecionado
+          ? null
+          : (nomeCliente ? `Cliente: ${nomeCliente}` : null);
+
         await api.post('/comandas/', {
         id_mesa: Number(mesaId),
         id_garcom: user?.id,
+        id_cliente: clienteSelecionado?.id || undefined,
         id_metodo_pagamento: metodoIdAtual,
         id_cod_promocional: cupomAplicado?.id || undefined,
         preco_total: totalComanda,
@@ -184,7 +242,7 @@ export default function NovaComandaScreen() {
         status_pagamento: 'pendente',
         tipo_entrega: 'local',
         origem: 'mobile_garcom',
-        observacao_geral: nomeCliente ? `Cliente: ${nomeCliente}` : null,
+        observacao_geral: observacao,
         pedido_itens: pedidoItens,
         });
 
@@ -214,15 +272,66 @@ export default function NovaComandaScreen() {
       <Text style={styles.mesaLabel}>Mesa {mesaId}</Text>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Nome do cliente */}
-        <Text style={styles.label}>Nome do Cliente <Text style={styles.opcional}>(opcional)</Text></Text>
-        <TextInput
-          style={styles.input}
-          value={nomeCliente}
-          onChangeText={setNomeCliente}
-          placeholder="Ex.: João Silva"
-          placeholderTextColor="#BBB"
-        />
+        {/* Cliente - busca ou nome livre */}
+        <Text style={styles.label}>Cliente <Text style={styles.opcional}>(opcional)</Text></Text>
+
+        {clienteSelecionado ? (
+          <View style={styles.clienteSelecionadoRow}>
+            <View style={styles.clienteSelecionadoInfo}>
+              <Feather name="user-check" size={16} color="#2A6B2A" />
+              <Text style={styles.clienteSelecionadoNome}>{clienteSelecionado.nome}</Text>
+              {clienteSelecionado.documento && (
+                <Text style={styles.clienteSelecionadoDoc}>CPF: {clienteSelecionado.documento}</Text>
+              )}
+            </View>
+            <TouchableOpacity onPress={limparClienteSelecionado}>
+              <Feather name="x" size={18} color="#CC0000" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.clienteBuscaWrapper}>
+            <TextInput
+              style={styles.input}
+              value={clienteBusca}
+              onChangeText={(t) => { setClienteBusca(t); if (!t) setNomeCliente(''); }}
+              placeholder="Nome, e-mail ou CPF do cliente..."
+              placeholderTextColor="#BBB"
+            />
+            {buscandoClientes && (
+              <ActivityIndicator size="small" color="#8D0000" style={styles.clienteBuscaSpinner} />
+            )}
+            {showResultados && resultadosClientes.length > 0 && (
+              <View style={styles.clienteResultados}>
+                {resultadosClientes.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={styles.clienteResultadoItem}
+                    onPress={() => selecionarCliente(c)}
+                  >
+                    <Feather name="user" size={16} color="#555" />
+                    <View style={styles.clienteResultadoInfo}>
+                      <Text style={styles.clienteResultadoNome}>{c.nome}</Text>
+                      <Text style={styles.clienteResultadoEmail}>{c.email}</Text>
+                      {c.documento && (
+                        <Text style={styles.clienteResultadoDoc}>CPF: {c.documento}</Text>
+                      )}
+                    </View>
+                    <Feather name="chevron-right" size={16} color="#CCC" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {!buscandoClientes && clienteBusca.trim().length >= 2 && resultadosClientes.length === 0 && (
+              <TouchableOpacity
+                style={styles.novoClienteBtn}
+                onPress={() => { setNomeCliente(clienteBusca.trim()); setShowResultados(false); }}
+              >
+                <Feather name="user-plus" size={14} color="#555" />
+                <Text style={styles.novoClienteText}>Usar "{clienteBusca.trim()}" como nome do cliente</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* Quantidade de pessoas */}
         <Text style={styles.label}>Quantidade de pessoas</Text>
@@ -403,7 +512,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#8D0000' },
   mesaLabel: { fontSize: 14, color: '#555', paddingHorizontal: 20, marginBottom: 20 },
 
-  scroll: { paddingHorizontal: 20, paddingBottom: 24 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 32 },
 
   label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 8 },
   opcional: { fontWeight: '400', color: '#888' },
@@ -565,4 +674,55 @@ const styles = StyleSheet.create({
     backgroundColor: '#8D0000',
   },
   salvarText: { fontSize: 15, fontWeight: 'bold', color: '#FFF' },
+
+  clienteBuscaWrapper: { position: 'relative', marginBottom: 20 },
+  clienteBuscaSpinner: { position: 'absolute', right: 14, top: 12 },
+  clienteResultados: {
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#EEE',
+    maxHeight: 200,
+    overflow: 'hidden',
+    marginTop: -12,
+    marginBottom: 8,
+  },
+  clienteResultadoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+    gap: 10,
+  },
+  clienteResultadoInfo: { flex: 1 },
+  clienteResultadoNome: { fontSize: 14, fontWeight: '600', color: '#333' },
+  clienteResultadoEmail: { fontSize: 12, color: '#888' },
+  clienteResultadoDoc: { fontSize: 11, color: '#AAA' },
+  novoClienteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: -12,
+    marginBottom: 8,
+  },
+  novoClienteText: { fontSize: 13, color: '#555', flex: 1 },
+  clienteSelecionadoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0FFF0',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 48,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  clienteSelecionadoInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  clienteSelecionadoNome: { fontSize: 14, fontWeight: '600', color: '#2A6B2A' },
+  clienteSelecionadoDoc: { fontSize: 11, color: '#888' },
 });

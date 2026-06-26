@@ -31,7 +31,7 @@ export default function AdminAuditoriaScreen() {
   const fetchData = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
     try {
-      const { data } = await api.get<AuditLog[]>('/audit-logs/', { params: { limite: 50 } });
+      const { data } = await api.get<AuditLog[]>('/audit-logs/');
       setLogs(data);
     } catch {
       // silently fail

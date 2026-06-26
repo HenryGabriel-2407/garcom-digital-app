@@ -19,6 +19,7 @@ const CARDS: AdminCard[] = [
   { title: 'Produtos', icon: 'shopping-bag', route: '/(tabs)/admin/produtos', color: '#E68A00', desc: 'Gerenciar cardápio' },
   { title: 'Funcionários', icon: 'user-check', route: '/(tabs)/admin/funcionarios', color: '#7B5800', desc: 'Gerenciar equipe' },
   { title: 'Promoções', icon: 'tag', route: '/(tabs)/admin/promocoes', color: '#2A3406', desc: 'Cupons e descontos' },
+  { title: 'Comandas', icon: 'list', route: '/(tabs)/admin/comandas', color: '#333', desc: 'Gerenciar comandas' },
   { title: 'Auditoria', icon: 'file-text', route: '/(tabs)/admin/auditoria', color: '#555', desc: 'Logs de auditoria' },
 ];
 
@@ -68,8 +69,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#8D0000' },
   welcome: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20 },

@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator,
   TouchableWithoutFeedback, Keyboard, Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
@@ -39,77 +40,83 @@ export default function LoginScreen() {
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={styles.content}>
-          {/* Logo da pizzaria */}
-          <Image
-            source={require('../../assets/images/Logo Pizzaria.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-
-          <Text style={styles.subtitle}>GARÇOM DIGITAL</Text>
-          <Text style={styles.accessText}>Acesso exclusivo para colaboradores</Text>
-
-          <View style={styles.inputContainer}>
-            <Feather name="mail" size={20} color="#8D0000" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              placeholderTextColor="#999"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              returnKeyType="next"
-              editable={!loading}
+    <SafeAreaView style={styles.safeArea}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.content}>
+            <Image
+              source={require('../../assets/images/Logo Pizzaria.png')}
+              style={styles.logo}
+              resizeMode="contain"
             />
+
+            <Text style={styles.subtitle}>GARÇOM DIGITAL</Text>
+            <Text style={styles.accessText}>Acesso exclusivo para colaboradores</Text>
+
+            <View style={styles.inputContainer}>
+              <Feather name="mail" size={20} color="#8D0000" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor="#999"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                returnKeyType="next"
+                editable={!loading}
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Feather name="lock" size={20} color="#8D0000" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Senha"
+                placeholderTextColor="#999"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                returnKeyType="done"
+                editable={!loading}
+                onSubmitEditing={handleLogin}
+              />
+            </View>
+
+            <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
+              <Text style={styles.forgotText}>Esqueci a senha</Text>
+            </TouchableOpacity>
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            <TouchableOpacity
+              style={[styles.loginButton, (loading || authLoading) && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              activeOpacity={0.8}
+              disabled={loading || authLoading}
+            >
+              {loading || authLoading ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.loginButtonText}>ENTRAR</Text>
+              )}
+            </TouchableOpacity>
           </View>
-
-          <View style={styles.inputContainer}>
-            <Feather name="lock" size={20} color="#8D0000" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Senha"
-              placeholderTextColor="#999"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-              returnKeyType="done"
-              editable={!loading}
-              onSubmitEditing={handleLogin}
-            />
-          </View>
-
-          <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
-            <Text style={styles.forgotText}>Esqueci a senha</Text>
-          </TouchableOpacity>
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          <TouchableOpacity
-            style={[styles.loginButton, (loading || authLoading) && styles.loginButtonDisabled]}
-            onPress={handleLogin}
-            activeOpacity={0.8}
-            disabled={loading || authLoading}
-          >
-            {loading || authLoading ? (
-              <ActivityIndicator color="#FFF" size="small" />
-            ) : (
-              <Text style={styles.loginButtonText}>ENTRAR</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
+    </SafeAreaView>
   );
+
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FDF5E6',
+  },
   container: {
     flex: 1,
     backgroundColor: '#FDF5E6',

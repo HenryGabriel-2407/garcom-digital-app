@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert,
+  ActivityIndicator, RefreshControl, Alert, Image,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -33,6 +33,20 @@ interface Comanda {
   pedido_itens: PedidoItem[];
 }
 
+interface StatusLog {
+  id: number;
+  status_novo: string;
+  observacao: string | null;
+  timestamp: string;
+}
+
+interface ItemDetalhe {
+  nome: string;
+  imagem_link: string;
+}
+
+type DetalheMap = Record<number, ItemDetalhe>;
+
 type FiltroCozinha = 'pendentes' | 'em_preparo' | 'prontas';
 
 const FILTROS: { label: string; value: FiltroCozinha; status: string }[] = [
@@ -47,6 +61,54 @@ export default function CozinhaScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filtro, setFiltro] = useState<FiltroCozinha>('pendentes');
   const [erro, setErro] = useState('');
+  const [detalhes, setDetalhes] = useState<DetalheMap>({});
+  const [logsMap, setLogsMap] = useState<Record<number, StatusLog[]>>({});
+  const detalhesCache = useRef<DetalheMap>({});
+
+  const fetchDetalhes = useCallback(async (comandasList: Comanda[]) => {
+    const idsProdutos = new Set<number>();
+    const idsCombos = new Set<number>();
+    comandasList.forEach(c => c.pedido_itens.forEach(pi => {
+      if (pi.id_produto) idsProdutos.add(pi.id_produto);
+      if (pi.id_combo) idsCombos.add(pi.id_combo);
+    }));
+
+    const novosDetalhes: DetalheMap = { ...detalhesCache.current };
+
+    try {
+      const promises: Promise<any>[] = [];
+      idsProdutos.forEach(id => {
+        if (!novosDetalhes[id]) {
+          promises.push(
+            api.get(`/produtos/${id}`).then(r => ({ id, dados: { nome: r.data.nome, imagem_link: r.data.imagem_link } }))
+          );
+        }
+      });
+      idsCombos.forEach(id => {
+        if (!novosDetalhes[id]) {
+          promises.push(
+            api.get(`/combos/${id}`).then(r => ({ id, dados: { nome: r.data.nome, imagem_link: r.data.imagem_link } }))
+          );
+        }
+      });
+      const resultados = await Promise.all(promises);
+      resultados.forEach(p => { novosDetalhes[p.id] = p.dados; });
+      detalhesCache.current = novosDetalhes;
+      setDetalhes(novosDetalhes);
+    } catch { /* ignora */ }
+  }, []);
+
+  const fetchLogs = useCallback(async (comandasList: Comanda[]) => {
+    const novoMap: Record<number, StatusLog[]> = {};
+    const promises = comandasList.map(async c => {
+      try {
+        const { data } = await api.get<StatusLog[]>(`/comandas/${c.id}/status-logs`);
+        novoMap[c.id] = data;
+      } catch { novoMap[c.id] = []; }
+    });
+    await Promise.all(promises);
+    setLogsMap(novoMap);
+  }, []);
 
   const fetchComandas = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
@@ -57,13 +119,17 @@ export default function CozinhaScreen() {
         params: { status_comanda: filtroAtual.status },
       });
       setComandas(data);
+      await Promise.all([
+        fetchDetalhes(data),
+        fetchLogs(data),
+      ]);
     } catch {
       setErro('Não foi possível carregar os pedidos.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [filtro]);
+  }, [filtro, fetchDetalhes, fetchLogs]);
 
   useFocusEffect(useCallback(() => { fetchComandas(); }, [fetchComandas]));
 
@@ -103,6 +169,13 @@ export default function CozinhaScreen() {
       pronta: '#2A6B2A',
     };
     return map[s] || '#555';
+  };
+
+  const itemModificado = (comandaId: number, itemId: number): boolean => {
+    const logs = logsMap[comandaId] || [];
+    return logs.some(l =>
+      l.observacao?.includes(`Item #${itemId} modificado`)
+    );
   };
 
   return (
@@ -174,24 +247,44 @@ export default function CozinhaScreen() {
                 </View>
 
                 <View style={styles.itensBox}>
-                  {item.pedido_itens.map((pi) => (
-                    <View key={pi.id} style={styles.itemRow}>
-                      <Text style={styles.itemQtd}>{pi.quantidade}x</Text>
-                      <Text style={styles.itemInfoText}>
-                        {pi.id_produto ? 'Produto' : 'Combo'} #{pi.id_produto || pi.id_combo}
-                      </Text>
-                      {pi.observacao && (
-                        <Text style={styles.itemObs}>Obs: {pi.observacao}</Text>
-                      )}
-                    </View>
-                  ))}
+                  {item.pedido_itens.map((pi) => {
+                    const idItem = pi.id_produto || pi.id_combo;
+                    const detalhe = idItem ? detalhes[idItem] : null;
+                    const nomeItem = detalhe?.nome || (pi.id_produto ? 'Produto' : 'Combo');
+                    const imagem = detalhe?.imagem_link;
+                    const modificado = itemModificado(item.id, pi.id);
+
+                    return (
+                      <View key={pi.id} style={[styles.itemRow, modificado && styles.itemModificado]}>
+                        {modificado && (
+                          <View style={styles.modificadoBadge}>
+                            <Feather name="alert-triangle" size={10} color="#FFF" />
+                            <Text style={styles.modificadoText}>MODIFICADO</Text>
+                          </View>
+                        )}
+                        <View style={styles.itemContent}>
+                          {imagem && (
+                            <Image source={{ uri: imagem }} style={styles.itemImage} resizeMode="cover" />
+                          )}
+                          <View style={styles.itemTextInfo}>
+                            <View style={styles.itemNomeRow}>
+                              <Text style={styles.itemQtd}>{pi.quantidade}x</Text>
+                              <Text style={styles.itemNome} numberOfLines={1}>{nomeItem}</Text>
+                            </View>
+                            {pi.observacao && (
+                              <Text style={styles.itemObs}>Obs: {pi.observacao}</Text>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
 
                 <Text style={styles.tempoText}>
                   {new Date(item.data_registro).toLocaleTimeString()}
                 </Text>
 
-                {/* Ações */}
                 {item.status_comanda === 'aberta' && (
                   <TouchableOpacity
                     style={styles.acaoBtn}
@@ -241,8 +334,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
   },
   headerTitle: { fontSize: 17, fontWeight: 'bold', color: '#8D0000' },
 
@@ -295,10 +388,38 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
   },
-  itemRow: { paddingVertical: 3 },
+  itemRow: {
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  itemModificado: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: 8,
+    marginVertical: 2,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: '#FFD54F',
+  },
+  modificadoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E68A00',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  modificadoText: { fontSize: 9, fontWeight: '800', color: '#FFF' },
+  itemContent: { flexDirection: 'row', alignItems: 'center' },
+  itemImage: { width: 36, height: 36, borderRadius: 6, marginRight: 8 },
+  itemTextInfo: { flex: 1 },
+  itemNomeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   itemQtd: { fontSize: 14, fontWeight: '700', color: '#8D0000' },
-  itemInfoText: { fontSize: 13, color: '#333' },
-  itemObs: { fontSize: 12, color: '#888', fontStyle: 'italic', marginLeft: 24 },
+  itemNome: { fontSize: 13, color: '#333', flex: 1 },
+  itemObs: { fontSize: 12, color: '#888', fontStyle: 'italic', marginLeft: 20, marginTop: 2 },
 
   tempoText: { fontSize: 12, color: '#999', textAlign: 'right', marginBottom: 10 },
 

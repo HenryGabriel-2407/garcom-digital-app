@@ -4,11 +4,12 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../contexts/AuthContext';
 import api from '../../../services/api';
+
 
 type StatusMesa = 'livre' | 'ocupada' | 'reservada';
 
@@ -104,6 +105,7 @@ const FILTROS: { label: string; value: Filtro }[] = [
 export default function MesasScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const [mesas, setMesas]           = useState<Mesa[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -159,7 +161,7 @@ export default function MesasScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.subHeader}>
         <Text style={styles.garcomText}>
           Garçom: {user?.nome?.split(' ')[0] ?? '—'}
@@ -233,9 +235,10 @@ export default function MesasScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FDF5E6' },
-
-  subHeader: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
+  container: { flex: 1, 
+    backgroundColor: '#FDF5E6'
+  },
+  subHeader: { paddingHorizontal: 20, paddingBottom: 4, paddingTop: 8 },
   garcomText: { fontSize: 14, color: '#555', marginBottom: 10 },
   tabs: { flexDirection: 'row', gap: 12 },
   tab: { paddingBottom: 6 },
@@ -259,7 +262,7 @@ const styles = StyleSheet.create({
   filtroText: { fontSize: 12, fontWeight: '600', color: '#555' },
   filtroTextActive: { color: '#FFF' },
 
-  listContent: { paddingHorizontal: 16, paddingBottom: 32 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 24 },
 
   card: {
     backgroundColor: '#FFF',
@@ -288,9 +291,10 @@ const styles = StyleSheet.create({
   actionButton: {
     backgroundColor: '#8D0000',
     borderRadius: 10,
-    paddingVertical: 11,
+    paddingVertical: 14,
     alignItems: 'center',
     marginTop: 14,
+    marginHorizontal: 2,
   },
   actionButtonOutline: {
     backgroundColor: 'transparent',
